@@ -47,6 +47,11 @@ if (process.env.GEMINI_API_KEY) {
   }
 }
 
+// Favicon endpoint to prevent 404
+app.get('/favicon.ico', (req, res) => {
+  res.status(204).end();
+});
+
 // REST API ENDPOINTS
 
 // 1. Health check & User
