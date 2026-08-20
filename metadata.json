@@ -1,0 +1,6 @@
+{
+  "name": "WasteSense AI",
+  "description": "AI-powered waste segregation, smart collection, and predictive waste management for cleaner communities.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
