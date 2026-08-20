@@ -34,14 +34,51 @@ export const AIWasteScannerView: React.FC<AIWasteScannerViewProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Helper to compress base64 image on canvas (max 1024px, quality 0.8)
+  const compressImage = (dataUrl: string, maxWidth = 1024, maxHeight = 1024, quality = 0.8): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth || height > maxHeight) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        } else {
+          resolve(dataUrl);
+        }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  };
+
   // Handle file select from input
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setSelectedFile(file);
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
+      reader.onloadend = async () => {
+        const rawUrl = reader.result as string;
+        const compressed = await compressImage(rawUrl);
+        setImagePreview(compressed);
       };
       reader.readAsDataURL(file);
     }
@@ -66,7 +103,7 @@ export const AIWasteScannerView: React.FC<AIWasteScannerViewProps> = ({
   };
 
   // Capture photo frame from video
-  const captureCameraPhoto = () => {
+  const captureCameraPhoto = async () => {
     if (videoRef.current) {
       const canvas = document.createElement('canvas');
       canvas.width = videoRef.current.videoWidth || 640;
@@ -75,7 +112,8 @@ export const AIWasteScannerView: React.FC<AIWasteScannerViewProps> = ({
       if (ctx) {
         ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/jpeg');
-        setImagePreview(dataUrl);
+        const compressed = await compressImage(dataUrl);
+        setImagePreview(compressed);
 
         // Stop camera stream tracks
         const stream = videoRef.current.srcObject as MediaStream;
@@ -102,19 +140,34 @@ export const AIWasteScannerView: React.FC<AIWasteScannerViewProps> = ({
     setScanningError(null);
 
     try {
+      let finalImage = base64 || imagePreview || undefined;
+      if (finalImage && finalImage.startsWith('data:image')) {
+        finalImage = await compressImage(finalImage);
+      }
+
       const res = await fetch('/api/classify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageBase64: base64 || imagePreview,
+          imageBase64: finalImage,
           sampleId,
           promptNote
         })
       });
 
+      if (!res.ok) {
+        const text = await res.text();
+        let errMsg = `Server error (${res.status})`;
+        try {
+          const parsedErr = JSON.parse(text);
+          if (parsedErr.error) errMsg = parsedErr.error;
+        } catch {}
+        throw new Error(errMsg);
+      }
+
       const data = await res.json();
       if (data.success && data.result) {
-        onClassificationComplete(data.result, base64 || imagePreview || undefined);
+        onClassificationComplete(data.result, finalImage);
       } else {
         throw new Error(data.error || 'Failed to classify image');
       }
