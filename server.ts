@@ -19,7 +19,8 @@ import { SmartBin, CitizenReport, WasteClassificationResult, UserProfile, AppNot
 const app = express();
 const PORT = 3000;
 
-app.use(express.json({ limit: '15mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // In-memory application state
 let binsState: SmartBin[] = [...INITIAL_BINS];
@@ -92,6 +93,13 @@ app.post('/api/classify', async (req, res) => {
     // Try real Gemini Vision API call if base64 provided and client is available
     if (imageBase64 && aiClient) {
       try {
+        // Detect mimeType from prefix
+        let mimeType = 'image/jpeg';
+        const match = imageBase64.match(/^data:(image\/\w+);base64,/);
+        if (match && match[1]) {
+          mimeType = match[1];
+        }
+
         // Clean base64 string
         const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
         
@@ -113,12 +121,12 @@ JSON structure:
 
         const imagePart = {
           inlineData: {
-            mimeType: 'image/jpeg',
+            mimeType,
             data: cleanBase64
           }
         };
 
-        const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+        const candidateModels = ['gemini-3.7-flash', 'gemini-flash-latest'];
         let parsed: WasteClassificationResult | null = null;
         let usedModel = '';
 
